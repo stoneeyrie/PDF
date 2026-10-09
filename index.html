@@ -1,0 +1,1094 @@
+<!DOCTYPE html>
+<html lang="de" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF Studio Pro - Datenschutzkonforme PDF-Bearbeitung</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#f0f9ff',
+                            100: '#e0f2fe',
+                            500: '#0284c7',
+                            600: '#0284c7',
+                            700: '#0369a1',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <!-- PDF processing & preview libraries -->
+    <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <!-- SortableJS for HTML5 & Touch Drag & Drop -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.2/Sortable.min.js"></script>
+
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .page-card { 
+            transition: border-color 0.15s ease, background-color 0.15s ease, box-shadow 0.15s ease; 
+            touch-action: none;
+        }
+        .page-card.selected-for-delete {
+            border-color: #ef4444 !important;
+            background-color: rgba(239, 68, 68, 0.12) !important;
+        }
+        .page-card.selected-for-delete .delete-overlay { opacity: 1; }
+        
+        /* Drag & Drop Visual Indicator Styles */
+        .sortable-ghost { 
+            opacity: 0.25 !important; 
+            background-color: #312e81 !important;
+            border: 2px dashed #6366f1 !important; 
+        }
+        .sortable-chosen { 
+            box-shadow: 0 20px 30px -10px rgba(0,0,0,0.7), 0 0 15px rgba(99, 102, 241, 0.5) !important; 
+            transform: scale(1.03);
+            z-index: 40;
+        }
+        .sortable-drag {
+            cursor: grabbing !important;
+            opacity: 0.95 !important;
+        }
+
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: rgba(15,23,42,0.6); }
+        ::-webkit-scrollbar-thumb { background: rgba(51,65,85,0.8); border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(71,85,105,1); }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col justify-between selection:bg-indigo-500 selection:text-white">
+
+    <div>
+        <header class="border-b border-slate-800 bg-slate-900/90 backdrop-blur sticky top-0 z-50">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <div class="p-2.5 bg-gradient-to-tr from-indigo-600 to-violet-500 text-white rounded-xl shadow-lg shadow-indigo-500/20">
+                        <i class="fa-solid fa-layer-group text-xl"></i>
+                    </div>
+                    <div>
+                        <h1 class="font-bold text-lg leading-tight tracking-wide bg-gradient-to-r from-white via-slate-200 to-slate-400 bg-clip-text text-transparent">PDF Studio Pro</h1>
+                        <p class="text-xs text-slate-400">Kürzen, Mergen, Teilen, Blanko-Check & Nummerierung</p>
+                    </div>
+                </div>
+                
+                <div class="flex items-center gap-3">
+                    <div class="hidden sm:flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 px-3 py-1.5 rounded-full text-xs font-medium">
+                        <i class="fa-solid fa-shield-halved text-sm"></i>
+                        <span>100% Lokal im Browser</span>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+            
+            <!-- Mode Switcher Tabs -->
+            <div id="mode-tabs" class="flex flex-wrap items-center justify-between gap-4 mb-6 border-b border-slate-800 pb-4">
+                <div class="flex bg-slate-900 p-1.5 rounded-xl border border-slate-800 text-sm font-medium">
+                    <button id="tab-merge" class="px-5 py-2 rounded-lg flex items-center gap-2.5 transition-all text-white bg-indigo-600 shadow-md">
+                        <i class="fa-solid fa-code-merge"></i>
+                        <span>Zusammenfügen & Ordnen</span>
+                    </button>
+                    <button id="tab-trim" class="px-5 py-2 rounded-lg flex items-center gap-2.5 transition-all text-slate-400 hover:text-slate-200">
+                        <i class="fa-solid fa-scissors"></i>
+                        <span>Einzel-PDF Kürzen</span>
+                    </button>
+                </div>
+
+                <div id="global-actions" class="hidden flex items-center gap-2">
+                    <label for="append-file-input" class="cursor-pointer px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-lg text-xs font-medium transition-colors flex items-center gap-2">
+                        <i class="fa-solid fa-plus text-indigo-400"></i>
+                        <span>Weitere PDFs hinzufügen</span>
+                    </label>
+                    <input type="file" id="append-file-input" accept="application/pdf" multiple class="hidden">
+
+                    <button id="btn-reset-all" class="px-3 py-2 bg-slate-800/80 hover:bg-rose-950/40 border border-slate-700 hover:border-rose-800/50 text-slate-400 hover:text-rose-300 rounded-lg text-xs font-medium transition-colors">
+                        <i class="fa-solid fa-rotate-left mr-1"></i> Alles zurücksetzen
+                    </button>
+                </div>
+            </div>
+
+            <div id="upload-container" class="max-w-2xl mx-auto my-10">
+                <div id="drop-zone" class="border-2 border-dashed border-slate-700 hover:border-indigo-500 bg-slate-900/40 hover:bg-slate-900/90 rounded-2xl p-10 text-center cursor-pointer transition-all duration-200 group">
+                    <input type="file" id="file-input" accept="application/pdf" multiple class="hidden">
+                    <div class="w-16 h-16 bg-indigo-500/10 text-indigo-400 rounded-full flex items-center justify-center mx-auto mb-4 group-hover:scale-110 transition-transform border border-indigo-500/20">
+                        <i class="fa-solid fa-file-circle-plus text-2xl"></i>
+                    </div>
+                    <h2 class="text-xl font-semibold mb-2">PDF-Dateien hierher ziehen</h2>
+                    <p class="text-slate-400 text-sm mb-6">Wählen Sie eine oder mehrere PDF-Dateien aus</p>
+                    <div class="inline-flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-medium text-sm transition-all shadow-lg shadow-indigo-600/20">
+                        <i class="fa-solid fa-folder-open"></i>
+                        <span>Dateien auswählen</span>
+                    </div>
+                    <div class="mt-8 pt-6 border-t border-slate-800 flex flex-wrap items-center justify-center gap-6 text-xs text-slate-400">
+                        <span class="flex items-center gap-1.5"><i class="fa-solid fa-shield text-emerald-400"></i> Keine Server-Uploads</span>
+                        <span class="flex items-center gap-1.5"><i class="fa-solid fa-columns text-indigo-400"></i> Doppenseiten teilen</span>
+                        <span class="flex items-center gap-1.5"><i class="fa-solid fa-file-circle-xmark text-violet-400"></i> Blanko-Check</span>
+                    </div>
+                </div>
+            </div>
+
+            <div id="editor-container" class="hidden space-y-6">
+                
+                <!-- File List Management -->
+                <div id="files-summary-bar" class="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 shadow-xl space-y-3">
+                    <div class="flex items-center justify-between text-xs font-semibold text-slate-400 uppercase tracking-wider px-1">
+                        <span><i class="fa-solid fa-files mr-1.5 text-indigo-400"></i> Geladene Quelldateien (<span id="file-count">0</span>)</span>
+                        <span>Freie Anordnung aller Seiten unten möglich</span>
+                    </div>
+                    <div id="file-chips-container" class="flex flex-wrap gap-2">
+                        <!-- Dynamic file chips -->
+                    </div>
+                </div>
+
+                <!-- Controls & Selection Bar -->
+                <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xl space-y-4">
+                    <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-800">
+                        
+                        <!-- Counters -->
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400">
+                                <i class="fa-solid fa-calculator text-lg"></i>
+                            </div>
+                            <div>
+                                <h3 class="font-semibold text-sm text-slate-100">Seitenstatus</h3>
+                                <p class="text-xs text-slate-400 flex items-center gap-2 mt-0.5">
+                                    <span>Gesamt: <strong id="total-pages-count" class="text-slate-200">0</strong></span>
+                                    <span>•</span>
+                                    <span class="text-rose-400">Markiert zum Löschen: <strong id="delete-pages-count">0</strong></span>
+                                    <span>•</span>
+                                    <span class="text-emerald-400">Im Export: <strong id="remaining-pages-count">0</strong></span>
+                                </p>
+                            </div>
+                        </div>
+
+                        <!-- Advanced Auto Tools -->
+                        <div class="flex flex-wrap items-center gap-2">
+                            <button id="btn-detect-blanks" class="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-500/30 rounded-xl text-xs font-medium transition-colors flex items-center gap-2">
+                                <i class="fa-solid fa-ghost"></i>
+                                <span>Blanko-Seiten erkennen</span>
+                            </button>
+
+                            <button id="btn-split-all-spreads" class="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-sky-300 border border-sky-500/30 rounded-xl text-xs font-medium transition-colors flex items-center gap-2">
+                                <i class="fa-solid fa-table-columns"></i>
+                                <span>Breite Seiten teilen</span>
+                            </button>
+
+                            <button id="btn-download" class="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-sm font-semibold shadow-lg shadow-emerald-950/40 transition-all flex items-center justify-center gap-2">
+                                <i class="fa-solid fa-download"></i>
+                                <span>Exportieren & Herunterladen</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Export Options Panel (Page Numbering) -->
+                    <div class="bg-slate-950/60 border border-slate-800/80 rounded-xl p-3 flex flex-wrap items-center justify-between gap-4 text-xs">
+                        <div class="flex items-center gap-2 text-slate-300 font-medium">
+                            <i class="fa-solid fa-list-ol text-indigo-400"></i>
+                            <span>Seitennummerierung beim Export:</span>
+                        </div>
+                        <div class="flex flex-wrap items-center gap-3">
+                            <label class="flex items-center gap-2 cursor-pointer text-slate-300">
+                                <input type="checkbox" id="numbering-active" class="rounded border-slate-700 bg-slate-900 text-indigo-600 focus:ring-indigo-500">
+                                <span>Nummerierung hinzufügen</span>
+                            </label>
+                            
+                            <select id="numbering-format" class="bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1 text-slate-200 text-xs outline-none">
+                                <option value="simple">Seite {n}</option>
+                                <option value="total" selected>Seite {n} von {total}</option>
+                                <option value="slash">{n} / {total}</option>
+                                <option value="dash">- {n} -</option>
+                            </select>
+
+                            <select id="numbering-position" class="bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1 text-slate-200 text-xs outline-none">
+                                <option value="bottom-center" selected>Unten Mitte</option>
+                                <option value="bottom-right">Unten Rechts</option>
+                                <option value="bottom-left">Unten Links</option>
+                                <option value="top-center">Oben Mitte</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Quick Selection Tools -->
+                    <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pt-1">
+                        <!-- Selection Helpers -->
+                        <div class="flex flex-wrap items-center gap-2">
+                            <span class="text-xs font-medium text-slate-400 mr-1">Auswahl:</span>
+                            <button id="btn-select-none" class="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-xs rounded-lg font-medium text-slate-300 transition-colors">
+                                Keine
+                            </button>
+                            <button id="btn-select-even" class="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-xs rounded-lg font-medium text-slate-300 transition-colors">
+                                Gerade Seiten
+                            </button>
+                            <button id="btn-select-odd" class="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-xs rounded-lg font-medium text-slate-300 transition-colors">
+                                Ungerade Seiten
+                            </button>
+                            <button id="btn-invert-selection" class="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-xs rounded-lg font-medium text-slate-300 transition-colors">
+                                Umkehren
+                            </button>
+                        </div>
+
+                        <!-- Manual Range Selection -->
+                        <div class="flex items-center gap-2">
+                            <label for="range-input" class="text-xs font-medium text-slate-400 whitespace-nowrap">Lösch-Bereich:</label>
+                            <div class="relative flex-1 sm:w-56">
+                                <input type="text" id="range-input" placeholder="z.B. 1, 3-5, 8" class="w-full bg-slate-950 border border-slate-800 focus:border-indigo-500 rounded-lg px-3 py-1.5 text-xs text-slate-100 placeholder-slate-600 outline-none transition-colors">
+                            </div>
+                            <button id="btn-apply-range" class="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-xs font-medium text-white rounded-lg transition-colors">
+                                Markieren
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Page Grid Indicator & Hints -->
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between text-xs text-slate-400 px-1 gap-2">
+                    <p class="flex items-center gap-1.5">
+                        <i class="fa-solid fa-up-down-left-right text-indigo-400"></i>
+                        <span>An den <strong>Grip-Punkten (⋮⋮)</strong> ziehen, um die Position zu ändern.</span>
+                    </p>
+                    <p class="text-rose-400 font-medium"><i class="fa-solid fa-circle-info mr-1"></i> Rot umrandete Seiten werden beim Export gelöscht.</p>
+                </div>
+
+                <!-- Dynamic Page Grid -->
+                <div id="pages-grid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 min-h-[150px] p-2 bg-slate-900/30 rounded-2xl border border-slate-800/50">
+                    <!-- Dynamic page thumbnails rendered here -->
+                </div>
+            </div>
+
+            <!-- Loading Modal Overlay -->
+            <div id="loading-overlay" class="hidden fixed inset-0 bg-slate-950/85 backdrop-blur-sm z-50 flex flex-col items-center justify-center p-4">
+                <div class="bg-slate-900 border border-slate-800 p-6 rounded-2xl shadow-2xl flex flex-col items-center max-w-sm w-full text-center">
+                    <div class="w-12 h-12 border-4 border-indigo-500/20 border-t-indigo-500 rounded-full animate-spin mb-4"></div>
+                    <h3 id="loading-title" class="font-semibold text-lg text-slate-100">PDF wird verarbeitet...</h3>
+                    <p id="loading-subtitle" class="text-xs text-slate-400 mt-1">Bitte warten...</p>
+                </div>
+            </div>
+
+            <!-- App Notification/Alert Modal -->
+            <div id="app-dialog-alert" class="hidden fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+                <div class="bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl max-w-md w-full p-6 text-center transform transition-all">
+                    <div id="app-dialog-alert-icon-wrapper" class="w-14 h-14 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 flex items-center justify-center mx-auto mb-4">
+                        <i id="app-dialog-alert-icon" class="fa-solid fa-circle-info text-2xl"></i>
+                    </div>
+                    <h3 id="app-dialog-alert-title" class="text-lg font-bold text-slate-100 mb-2">Hinweis</h3>
+                    <p id="app-dialog-alert-message" class="text-sm text-slate-400 mb-6 leading-relaxed">Nachrichtentext...</p>
+                    <button id="app-dialog-alert-btn" class="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-semibold transition-all shadow-lg shadow-indigo-600/20">
+                        Verstanden
+                    </button>
+                </div>
+            </div>
+
+            <!-- App Confirmation Modal -->
+            <div id="app-dialog-confirm" class="hidden fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+                <div class="bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl max-w-md w-full p-6 text-center transform transition-all">
+                    <div id="app-dialog-confirm-icon-wrapper" class="w-14 h-14 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-400 flex items-center justify-center mx-auto mb-4">
+                        <i id="app-dialog-confirm-icon" class="fa-solid fa-triangle-exclamation text-2xl"></i>
+                    </div>
+                    <h3 id="app-dialog-confirm-title" class="text-lg font-bold text-slate-100 mb-2">Bestätigung erforderlich</h3>
+                    <p id="app-dialog-confirm-message" class="text-sm text-slate-400 mb-6 leading-relaxed">Möchten Sie diese Aktion wirklich ausführen?</p>
+                    <div class="flex items-center gap-3">
+                        <button id="app-dialog-confirm-cancel" class="flex-1 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-sm font-semibold transition-colors border border-slate-700">
+                            Abbrechen
+                        </button>
+                        <button id="app-dialog-confirm-ok" class="flex-1 py-2.5 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-sm font-semibold transition-all shadow-lg shadow-rose-600/20">
+                            Bestätigen
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+        </main>
+    </div>
+
+    <!-- Footer -->
+    <footer class="border-t border-slate-800/80 bg-slate-950 py-6 mt-12 text-center text-xs text-slate-500">
+        <div class="max-w-7xl mx-auto px-4 space-y-1">
+            <p>100% Lokale Client-Side PDF-Verarbeitung. Es werden keine Daten übertragen.</p>
+            <p class="text-slate-600">Behält ursprüngliche Vektor-Qualität und interaktive Inhalte bei.</p>
+        </div>
+    </footer>
+
+    <script>
+        // Setup PDF.js worker
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+        // Application State
+        let loadedFiles = []; // Array of { id, file, arrayBuffer, pdfLibDoc, pdfJsDoc, pageCount, name, color }
+        let pageItems = [];   // Array of { id, fileId, originalPageIndex (0-based), cropRegion: null|'left'|'right', rotation (0,90,180,270), selectedForDeletion: bool, isBlank: bool }
+        let currentMode = 'merge';
+        let sortableInstance = null;
+
+        const FILE_COLORS = [
+            'border-indigo-500/40 text-indigo-400 bg-indigo-500/10',
+            'border-violet-500/40 text-violet-400 bg-violet-500/10',
+            'border-emerald-500/40 text-emerald-400 bg-emerald-500/10',
+            'border-amber-500/40 text-amber-400 bg-amber-500/10',
+            'border-sky-500/40 text-sky-400 bg-sky-500/10',
+            'border-rose-500/40 text-rose-400 bg-rose-500/10'
+        ];
+
+        // DOM Elements
+        const dropZone = document.getElementById('drop-zone');
+        const fileInput = document.getElementById('file-input');
+        const appendFileInput = document.getElementById('append-file-input');
+        const uploadContainer = document.getElementById('upload-container');
+        const editorContainer = document.getElementById('editor-container');
+        const pagesGrid = document.getElementById('pages-grid');
+        const fileChipsContainer = document.getElementById('file-chips-container');
+        const fileCountEl = document.getElementById('file-count');
+        const globalActions = document.getElementById('global-actions');
+        
+        const totalPagesCountEl = document.getElementById('total-pages-count');
+        const deletePagesCountEl = document.getElementById('delete-pages-count');
+        const remainingPagesCountEl = document.getElementById('remaining-pages-count');
+        const loadingOverlay = document.getElementById('loading-overlay');
+        const loadingTitle = document.getElementById('loading-title');
+        const loadingSubtitle = document.getElementById('loading-subtitle');
+        const rangeInput = document.getElementById('range-input');
+
+        // Mode buttons
+        const tabMerge = document.getElementById('tab-merge');
+        const tabTrim = document.getElementById('tab-trim');
+
+        // Action Buttons
+        const btnResetAll = document.getElementById('btn-reset-all');
+        const btnDownload = document.getElementById('btn-download');
+        const btnSelectNone = document.getElementById('btn-select-none');
+        const btnSelectEven = document.getElementById('btn-select-even');
+        const btnSelectOdd = document.getElementById('btn-select-odd');
+        const btnInvertSelection = document.getElementById('btn-invert-selection');
+        const btnApplyRange = document.getElementById('btn-apply-range');
+        const btnDetectBlanks = document.getElementById('btn-detect-blanks');
+        const btnSplitAllSpreads = document.getElementById('btn-split-all-spreads');
+
+        // Numbering Controls
+        const numberingActive = document.getElementById('numbering-active');
+        const numberingFormat = document.getElementById('numbering-format');
+        const numberingPosition = document.getElementById('numbering-position');
+
+        // --- CUSTOM APP MODAL DIALOG CONTROLLER ---
+        function showAppAlert(title, message, iconClass = 'fa-circle-info', iconColorClass = 'text-indigo-400 bg-indigo-500/10 border-indigo-500/20') {
+            return new Promise((resolve) => {
+                const dialog = document.getElementById('app-dialog-alert');
+                const titleEl = document.getElementById('app-dialog-alert-title');
+                const msgEl = document.getElementById('app-dialog-alert-message');
+                const iconEl = document.getElementById('app-dialog-alert-icon');
+                const iconWrap = document.getElementById('app-dialog-alert-icon-wrapper');
+                const btn = document.getElementById('app-dialog-alert-btn');
+
+                titleEl.textContent = title;
+                msgEl.textContent = message;
+                iconEl.className = `fa-solid ${iconClass} text-2xl`;
+                iconWrap.className = `w-14 h-14 rounded-2xl border flex items-center justify-center mx-auto mb-4 ${iconColorClass}`;
+
+                dialog.classList.remove('hidden');
+
+                function onClose() {
+                    dialog.classList.add('hidden');
+                    btn.removeEventListener('click', onClose);
+                    resolve();
+                }
+
+                btn.addEventListener('click', onClose);
+            });
+        }
+
+        function showAppConfirm(title, message, options = {}) {
+            return new Promise((resolve) => {
+                const dialog = document.getElementById('app-dialog-confirm');
+                const titleEl = document.getElementById('app-dialog-confirm-title');
+                const msgEl = document.getElementById('app-dialog-confirm-message');
+                const iconEl = document.getElementById('app-dialog-confirm-icon');
+                const iconWrap = document.getElementById('app-dialog-confirm-icon-wrapper');
+                const cancelBtn = document.getElementById('app-dialog-confirm-cancel');
+                const okBtn = document.getElementById('app-dialog-confirm-ok');
+
+                titleEl.textContent = title;
+                msgEl.textContent = message;
+
+                if (options.iconClass) iconEl.className = `fa-solid ${options.iconClass} text-2xl`;
+                if (options.iconColorClass) iconWrap.className = `w-14 h-14 rounded-2xl border flex items-center justify-center mx-auto mb-4 ${options.iconColorClass}`;
+                if (options.okText) okBtn.textContent = options.okText;
+                if (options.cancelText) cancelBtn.textContent = options.cancelText;
+
+                dialog.classList.remove('hidden');
+
+                function onConfirm() {
+                    cleanup();
+                    resolve(true);
+                }
+
+                function onCancel() {
+                    cleanup();
+                    resolve(false);
+                }
+
+                function cleanup() {
+                    dialog.classList.add('hidden');
+                    okBtn.removeEventListener('click', onConfirm);
+                    cancelBtn.removeEventListener('click', onCancel);
+                }
+
+                okBtn.addEventListener('click', onConfirm);
+                cancelBtn.addEventListener('click', onCancel);
+            });
+        }
+
+        function initSortable() {
+            if (sortableInstance) {
+                sortableInstance.destroy();
+            }
+
+            sortableInstance = new Sortable(pagesGrid, {
+                animation: 200,
+                handle: '.drag-handle',
+                ghostClass: 'sortable-ghost',
+                chosenClass: 'sortable-chosen',
+                dragClass: 'sortable-drag',
+                forceFallback: true,
+                fallbackTolerance: 3,
+                scroll: true,
+                scrollSensitivity: 80,
+                scrollSpeed: 15,
+                onEnd: function (evt) {
+                    if (evt.oldIndex === evt.newIndex) return;
+                    const movedItem = pageItems.splice(evt.oldIndex, 1)[0];
+                    pageItems.splice(evt.newIndex, 0, movedItem);
+                    updateCardNumbering();
+                    updateStats();
+                }
+            });
+        }
+
+        function updateCardNumbering() {
+            const cards = pagesGrid.querySelectorAll('.page-card');
+            cards.forEach((card, index) => {
+                const numSpan = card.querySelector('.page-number-display');
+                if (numSpan) {
+                    numSpan.textContent = `Seite ${index + 1}`;
+                }
+            });
+        }
+
+        // Mode Switching
+        tabMerge.addEventListener('click', () => setMode('merge'));
+        tabTrim.addEventListener('click', () => setMode('trim'));
+
+        function setMode(mode) {
+            currentMode = mode;
+            if (mode === 'merge') {
+                tabMerge.className = 'px-5 py-2 rounded-lg flex items-center gap-2.5 transition-all text-white bg-indigo-600 shadow-md';
+                tabTrim.className = 'px-5 py-2 rounded-lg flex items-center gap-2.5 transition-all text-slate-400 hover:text-slate-200';
+            } else {
+                tabTrim.className = 'px-5 py-2 rounded-lg flex items-center gap-2.5 transition-all text-white bg-indigo-600 shadow-md';
+                tabMerge.className = 'px-5 py-2 rounded-lg flex items-center gap-2.5 transition-all text-slate-400 hover:text-slate-200';
+            }
+        }
+
+        // Event Listeners for Upload
+        dropZone.addEventListener('click', () => fileInput.click());
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('border-indigo-500', 'bg-slate-900');
+        });
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.classList.remove('border-indigo-500', 'bg-slate-900');
+        });
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('border-indigo-500', 'bg-slate-900');
+            if (e.dataTransfer.files.length > 0) {
+                handleFilesSelect(Array.from(e.dataTransfer.files));
+            }
+        });
+
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) handleFilesSelect(Array.from(e.target.files));
+        });
+
+        appendFileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) handleFilesSelect(Array.from(e.target.files));
+        });
+
+        async function handleFilesSelect(files) {
+            const pdfFiles = files.filter(f => f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf'));
+            if (pdfFiles.length === 0) {
+                await showAppAlert('Ungültige Dateiauswahl', 'Bitte wählen Sie mindestens eine gültige PDF-Datei aus.', 'fa-triangle-exclamation', 'text-amber-400 bg-amber-500/10 border-amber-500/20');
+                return;
+            }
+
+            showLoading("PDFs werden analysiert...", "Struktur & Seiten werden vorbereitet...");
+
+            try {
+                for (const file of pdfFiles) {
+                    const arrayBuffer = await file.arrayBuffer();
+                    const pdfLibDoc = await PDFLib.PDFDocument.load(arrayBuffer, { ignoreEncryption: true });
+                    const pdfJsDoc = await pdfjsLib.getDocument({ data: arrayBuffer.slice(0) }).promise;
+                    
+                    const fileId = 'file_' + Math.random().toString(36).substr(2, 9);
+                    const colorClass = FILE_COLORS[loadedFiles.length % FILE_COLORS.length];
+
+                    const fileObj = {
+                        id: fileId,
+                        file: file,
+                        arrayBuffer: arrayBuffer,
+                        pdfLibDoc: pdfLibDoc,
+                        pdfJsDoc: pdfJsDoc,
+                        pageCount: pdfLibDoc.getPageCount(),
+                        name: file.name,
+                        color: colorClass
+                    };
+
+                    loadedFiles.push(fileObj);
+
+                    // Create page items for this file
+                    for (let i = 0; i < fileObj.pageCount; i++) {
+                        pageItems.push({
+                            id: 'page_' + Math.random().toString(36).substr(2, 9),
+                            fileId: fileId,
+                            originalPageIndex: i,
+                            cropRegion: null, // null, 'left', or 'right'
+                            rotation: 0,
+                            selectedForDeletion: false,
+                            isBlank: false
+                        });
+                    }
+                }
+
+                uploadContainer.classList.add('hidden');
+                editorContainer.classList.remove('hidden');
+                globalActions.classList.remove('hidden');
+
+                renderFileChips();
+                await renderAllThumbnails();
+                initSortable();
+                updateStats();
+
+            } catch (err) {
+                console.error(err);
+                await showAppAlert('Fehler beim Laden', 'Fehler beim Laden der PDF-Datei. Stellen Sie sicher, dass sie nicht passwortgeschützt ist.', 'fa-circle-xmark', 'text-rose-400 bg-rose-500/10 border-rose-500/20');
+            } finally {
+                hideLoading();
+            }
+        }
+
+        function renderFileChips() {
+            fileChipsContainer.innerHTML = '';
+            fileCountEl.textContent = loadedFiles.length;
+
+            loadedFiles.forEach((f) => {
+                const chip = document.createElement('div');
+                chip.className = `flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-medium ${f.color} shadow-sm`;
+                chip.innerHTML = `
+                    <i class="fa-solid fa-file-pdf"></i>
+                    <span class="truncate max-w-[140px]">${f.name}</span>
+                    <span class="opacity-60">(${f.pageCount} S.)</span>
+                    <button class="remove-file-btn hover:text-rose-400 ml-1 p-0.5" title="Datei entfernen">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                `;
+
+                chip.querySelector('.remove-file-btn').addEventListener('click', () => removeFile(f.id));
+                fileChipsContainer.appendChild(chip);
+            });
+        }
+
+        async function removeFile(fileId) {
+            const confirmed = await showAppConfirm('Datei entfernen', 'Möchten Sie diese Quelldatei und alle dazugehörigen Seiten wirklich entfernen?', {
+                okText: 'Entfernen',
+                cancelText: 'Abbrechen',
+                iconClass: 'fa-trash-can',
+                iconColorClass: 'text-rose-400 bg-rose-500/10 border-rose-500/20'
+            });
+
+            if (!confirmed) return;
+
+            loadedFiles = loadedFiles.filter(f => f.id !== fileId);
+            pageItems = pageItems.filter(p => p.fileId !== fileId);
+
+            if (loadedFiles.length === 0) {
+                resetAllSilently();
+                return;
+            }
+
+            renderFileChips();
+            await renderAllThumbnails();
+            initSortable();
+            updateStats();
+        }
+
+        async function renderAllThumbnails() {
+            pagesGrid.innerHTML = '';
+            showLoading("Vorschaubilder laden...", `Generiere Ansichten für ${pageItems.length} Seiten...`);
+
+            for (let i = 0; i < pageItems.length; i++) {
+                const item = pageItems[i];
+                const fileObj = loadedFiles.find(f => f.id === item.fileId);
+                if (!fileObj) continue;
+
+                const displayNum = i + 1;
+                loadingSubtitle.textContent = `Rendere Seite ${displayNum} von ${pageItems.length}...`;
+
+                const card = document.createElement('div');
+                card.className = `page-card relative bg-slate-900 border-2 ${item.selectedForDeletion ? 'border-rose-500 bg-rose-950/20' : 'border-slate-800 hover:border-slate-600'} rounded-2xl p-2.5 cursor-pointer select-none flex flex-col items-center justify-between group shadow-md`;
+                card.dataset.id = item.id;
+                if (item.selectedForDeletion) card.classList.add('selected-for-delete');
+
+                card.innerHTML = `
+                    <div class="drag-handle cursor-grab active:cursor-grabbing w-full flex items-center justify-between px-1 py-1 mb-1 text-slate-400 hover:text-indigo-400 bg-slate-950/60 rounded-lg border border-slate-800">
+                        <div class="flex items-center gap-1.5 px-1">
+                            <i class="fa-solid fa-grip-vertical text-slate-500"></i>
+                            <span class="text-[10px] font-mono opacity-70 truncate max-w-[70px]">${fileObj.name}</span>
+                        </div>
+                        <div class="flex items-center gap-1">
+                            <button class="split-btn p-1 hover:text-sky-400 transition-colors" title="Doppelseite in 2 Einzelseiten teilen">
+                                <i class="fa-solid fa-scissors text-xs"></i>
+                            </button>
+                            <button class="rotate-btn p-1 hover:text-indigo-400 transition-colors" title="90° drehen">
+                                <i class="fa-solid fa-rotate-right text-xs"></i>
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div class="relative w-full aspect-[1/1.4] bg-slate-950 rounded-xl overflow-hidden flex items-center justify-center mb-2 border border-slate-800/80">
+                        <canvas id="canvas-${item.id}" class="max-w-full max-h-full object-contain transition-transform duration-200" style="transform: rotate(${item.rotation}deg);"></canvas>
+                        
+                        ${item.cropRegion ? `<span class="absolute top-1 left-1 bg-sky-900/90 border border-sky-500/40 text-sky-200 text-[9px] px-1.5 py-0.5 rounded font-bold uppercase">${item.cropRegion === 'left' ? 'Links 1/2' : 'Rechts 2/2'}</span>` : ''}
+
+                        <!-- Delete Overlay -->
+                        <div class="delete-overlay absolute inset-0 bg-rose-950/80 backdrop-blur-[2px] opacity-0 flex flex-col items-center justify-center gap-2 transition-opacity duration-150">
+                            <div class="w-10 h-10 rounded-full bg-rose-600 text-white flex items-center justify-center shadow-lg">
+                                <i class="fa-solid fa-trash-can text-lg"></i>
+                            </div>
+                            <span class="text-[10px] font-bold text-white uppercase tracking-wider bg-rose-900/90 px-2 py-0.5 rounded-md">Entfernt</span>
+                        </div>
+                    </div>
+
+                    <div class="flex items-center justify-between w-full px-1">
+                        <span class="page-number-display text-xs font-semibold text-slate-300">Seite ${displayNum}</span>
+                        <span class="text-[10px] text-slate-500">${item.isBlank ? '<span class="text-amber-400 font-bold mr-1">[Blanko]</span>' : ''}Org: S. ${item.originalPageIndex + 1}</span>
+                    </div>
+                `;
+
+                // Split double page logic
+                card.querySelector('.split-btn').addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    splitSinglePage(item.id);
+                });
+
+                // Rotate Button logic
+                card.querySelector('.rotate-btn').addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    item.rotation = (item.rotation + 90) % 360;
+                    const canvas = card.querySelector(`canvas`);
+                    if (canvas) canvas.style.transform = `rotate(${item.rotation}deg)`;
+                });
+
+                // Toggle Selection for deletion on card click
+                card.addEventListener('click', (e) => {
+                    if (e.target.closest('.rotate-btn') || e.target.closest('.split-btn') || e.target.closest('.drag-handle')) return;
+                    item.selectedForDeletion = !item.selectedForDeletion;
+                    card.classList.toggle('selected-for-delete', item.selectedForDeletion);
+                    updateStats();
+                });
+
+                pagesGrid.appendChild(card);
+
+                // Render page content to canvas
+                try {
+                    const page = await fileObj.pdfJsDoc.getPage(item.originalPageIndex + 1);
+                    const canvas = document.getElementById(`canvas-${item.id}`);
+                    const context = canvas.getContext('2d');
+
+                    let viewport = page.getViewport({ scale: 0.35 });
+
+                    // Handle crop rendering for split spreads
+                    if (item.cropRegion) {
+                        const halfWidth = viewport.width / 2;
+                        canvas.height = viewport.height;
+                        canvas.width = halfWidth;
+
+                        const tempCanvas = document.createElement('canvas');
+                        tempCanvas.width = viewport.width;
+                        tempCanvas.height = viewport.height;
+                        const tempCtx = tempCanvas.getContext('2d');
+
+                        await page.render({ canvasContext: tempCtx, viewport: viewport }).promise;
+
+                        const sourceX = item.cropRegion === 'right' ? halfWidth : 0;
+                        context.drawImage(tempCanvas, sourceX, 0, halfWidth, viewport.height, 0, 0, halfWidth, viewport.height);
+                    } else {
+                        canvas.height = viewport.height;
+                        canvas.width = viewport.width;
+                        await page.render({ canvasContext: context, viewport: viewport }).promise;
+                    }
+
+                } catch (e) {
+                    console.error('Error rendering page preview:', e);
+                }
+            }
+        }
+
+        function splitSinglePage(pageItemId) {
+            const index = pageItems.findIndex(p => p.id === pageItemId);
+            if (index === -1) return;
+
+            const original = pageItems[index];
+
+            const leftHalf = {
+                ...original,
+                id: 'page_' + Math.random().toString(36).substr(2, 9),
+                cropRegion: 'left'
+            };
+
+            const rightHalf = {
+                ...original,
+                id: 'page_' + Math.random().toString(36).substr(2, 9),
+                cropRegion: 'right'
+            };
+
+            // Replace single spread with two halves
+            pageItems.splice(index, 1, leftHalf, rightHalf);
+            
+            renderAllThumbnails().then(() => {
+                initSortable();
+                updateStats();
+            });
+        }
+
+        // Split all wide/landscape spread pages in whole document
+        btnSplitAllSpreads.addEventListener('click', async () => {
+            showLoading("Doppelseiten analysieren...", "Prüfe Seitenbreiten...");
+
+            let splitCount = 0;
+            const newPageItems = [];
+
+            for (const item of pageItems) {
+                const fileObj = loadedFiles.find(f => f.id === item.fileId);
+                if (!fileObj || item.cropRegion) {
+                    newPageItems.push(item);
+                    continue;
+                }
+
+                const page = await fileObj.pdfJsDoc.getPage(item.originalPageIndex + 1);
+                const viewport = page.getViewport({ scale: 1.0 });
+
+                // If aspect ratio indicates landscape / double page (width > height * 1.15)
+                if (viewport.width > viewport.height * 1.15) {
+                    splitCount++;
+                    newPageItems.push({
+                        ...item,
+                        id: 'page_' + Math.random().toString(36).substr(2, 9),
+                        cropRegion: 'left'
+                    });
+                    newPageItems.push({
+                        ...item,
+                        id: 'page_' + Math.random().toString(36).substr(2, 9),
+                        cropRegion: 'right'
+                    });
+                } else {
+                    newPageItems.push(item);
+                }
+            }
+
+            pageItems = newPageItems;
+            hideLoading();
+
+            if (splitCount > 0) {
+                await renderAllThumbnails();
+                initSortable();
+                updateStats();
+                await showAppAlert('Doppelseiten geteilt', `${splitCount} Doppelseite(n) wurden in jeweils zwei Hochformat-Seiten geteilt.`, 'fa-table-columns', 'text-sky-400 bg-sky-500/10 border-sky-500/20');
+            } else {
+                await showAppAlert('Keine Treffer', 'Keine breiten Doppelseiten im Dokument gefunden.', 'fa-circle-info', 'text-slate-400 bg-slate-500/10 border-slate-500/20');
+            }
+        });
+
+        // Blank Page Detection Algorithm (Analyzing RGB variance/whiteness on canvas)
+        btnDetectBlanks.addEventListener('click', async () => {
+            showLoading("Blanko-Seiten erkennen...", "Prüfe Pixel-Dichte & Transparenz...");
+
+            let foundBlanks = 0;
+
+            for (let i = 0; i < pageItems.length; i++) {
+                const item = pageItems[i];
+                const canvas = document.getElementById(`canvas-${item.id}`);
+                if (!canvas) continue;
+
+                const ctx = canvas.getContext('2d');
+                const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                const data = imgData.data;
+
+                let nonWhitePixels = 0;
+                const totalPixels = data.length / 4;
+
+                // Sample every 4th pixel for speed
+                for (let j = 0; j < data.length; j += 16) {
+                    const r = data[j];
+                    const g = data[j + 1];
+                    const b = data[j + 2];
+                    const a = data[j + 3];
+
+                    // Check if pixel is significantly non-white/dark
+                    if (a > 30 && (r < 235 || g < 235 || b < 235)) {
+                        nonWhitePixels++;
+                    }
+                }
+
+                const nonWhiteRatio = nonWhitePixels / (totalPixels / 4);
+
+                // Threshold for blank page (less than 0.25% non-white content)
+                if (nonWhiteRatio < 0.0025) {
+                    item.isBlank = true;
+                    item.selectedForDeletion = true; // Auto-mark for deletion
+                    foundBlanks++;
+                }
+            }
+
+            hideLoading();
+            updateGridVisuals();
+
+            if (foundBlanks > 0) {
+                await showAppAlert('Blanko-Seiten erkannt', `${foundBlanks} leere/blanko Seite(n) wurden erkannt und zum Löschen markiert.`, 'fa-ghost', 'text-amber-400 bg-amber-500/10 border-amber-500/20');
+            } else {
+                await showAppAlert('Keine Blanko-Seiten', 'Es wurden keine leeren Blanko-Seiten erkannt.', 'fa-circle-info', 'text-slate-400 bg-slate-500/10 border-slate-500/20');
+            }
+        });
+
+        function updateStats() {
+            const total = pageItems.length;
+            const deleteCount = pageItems.filter(p => p.selectedForDeletion).length;
+            const remaining = total - deleteCount;
+
+            totalPagesCountEl.textContent = total;
+            deletePagesCountEl.textContent = deleteCount;
+            remainingPagesCountEl.textContent = remaining;
+
+            if (remaining <= 0) {
+                btnDownload.disabled = true;
+                btnDownload.classList.add('opacity-50', 'cursor-not-allowed');
+            } else {
+                btnDownload.disabled = false;
+                btnDownload.classList.remove('opacity-50', 'cursor-not-allowed');
+            }
+        }
+
+        // Selection Handlers
+        btnSelectNone.addEventListener('click', () => {
+            pageItems.forEach(p => p.selectedForDeletion = false);
+            updateGridVisuals();
+        });
+
+        btnSelectEven.addEventListener('click', () => {
+            pageItems.forEach((p, idx) => p.selectedForDeletion = ((idx + 1) % 2 === 0));
+            updateGridVisuals();
+        });
+
+        btnSelectOdd.addEventListener('click', () => {
+            pageItems.forEach((p, idx) => p.selectedForDeletion = ((idx + 1) % 2 !== 0));
+            updateGridVisuals();
+        });
+
+        btnInvertSelection.addEventListener('click', () => {
+            pageItems.forEach(p => p.selectedForDeletion = !p.selectedForDeletion);
+            updateGridVisuals();
+        });
+
+        btnApplyRange.addEventListener('click', () => {
+            const text = rangeInput.value.trim();
+            if (!text) return;
+
+            const selectedIndices = new Set();
+            const parts = text.split(',');
+
+            parts.forEach(part => {
+                part = part.trim();
+                if (part.includes('-')) {
+                    const [start, end] = part.split('-').map(n => parseInt(n, 10));
+                    if (!isNaN(start) && !isNaN(end)) {
+                        for (let i = Math.min(start, end); i <= Math.max(start, end); i++) {
+                            if (i >= 1 && i <= pageItems.length) selectedIndices.add(i - 1);
+                        }
+                    }
+                } else {
+                    const num = parseInt(part, 10);
+                    if (!isNaN(num) && num >= 1 && num <= pageItems.length) {
+                        selectedIndices.add(num - 1);
+                    }
+                }
+            });
+
+            pageItems.forEach((p, idx) => p.selectedForDeletion = selectedIndices.has(idx));
+            updateGridVisuals();
+        });
+
+        function updateGridVisuals() {
+            const cards = pagesGrid.querySelectorAll('.page-card');
+            cards.forEach(card => {
+                const item = pageItems.find(p => p.id === card.dataset.id);
+                if (item) {
+                    card.classList.toggle('selected-for-delete', item.selectedForDeletion);
+                }
+            });
+            updateStats();
+        }
+
+        btnDownload.addEventListener('click', async () => {
+            const exportPages = pageItems.filter(p => !p.selectedForDeletion);
+            if (exportPages.length === 0) {
+                await showAppAlert('Keine Seiten', 'Es ist keine Seite zum Exportieren übrig.', 'fa-triangle-exclamation', 'text-amber-400 bg-amber-500/10 border-amber-500/20');
+                return;
+            }
+
+            showLoading("Neues PDF erstellen...", "Seiten werden zusammengefügt & formatiert...");
+
+            setTimeout(async () => {
+                try {
+                    const mergedPdf = await PDFLib.PDFDocument.create();
+                    const font = await mergedPdf.embedFont(PDFLib.StandardFonts.Helvetica);
+
+                    const totalCount = exportPages.length;
+
+                    for (let idx = 0; idx < exportPages.length; idx++) {
+                        const item = exportPages[idx];
+                        const fileObj = loadedFiles.find(f => f.id === item.fileId);
+                        if (!fileObj) continue;
+
+                        // Copy page from original document
+                        const [copiedPage] = await mergedPdf.copyPages(fileObj.pdfLibDoc, [item.originalPageIndex]);
+                        
+                        // Handle cropping for split spreads
+                        if (item.cropRegion) {
+                            const { x, y, width, height } = copiedPage.getCropBox() || copiedPage.getMediaBox();
+                            const halfWidth = width / 2;
+
+                            if (item.cropRegion === 'left') {
+                                copiedPage.setCropBox(x, y, halfWidth, height);
+                            } else {
+                                copiedPage.setCropBox(x + halfWidth, y, halfWidth, height);
+                            }
+                        }
+
+                        // Apply additional rotation
+                        if (item.rotation !== 0) {
+                            const currentRotation = copiedPage.getRotation().angle;
+                            copiedPage.setRotation(PDFLib.degrees((currentRotation + item.rotation) % 360));
+                        }
+
+                        // Apply dynamic Page Numbering Overlay if enabled
+                        if (numberingActive.checked) {
+                            const pageNum = idx + 1;
+                            let labelText = '';
+
+                            const fmt = numberingFormat.value;
+                            if (fmt === 'simple') labelText = `Seite ${pageNum}`;
+                            else if (fmt === 'total') labelText = `Seite ${pageNum} von ${totalCount}`;
+                            else if (fmt === 'slash') labelText = `${pageNum} / ${totalCount}`;
+                            else if (fmt === 'dash') labelText = `- ${pageNum} -`;
+
+                            const fontSize = 10;
+                            const textWidth = font.widthOfTextAtSize(labelText, fontSize);
+                            const textHeight = font.heightAtSize(fontSize);
+
+                            const { width, height } = copiedPage.getSize();
+                            const margin = 20;
+
+                            let posX = width / 2 - textWidth / 2; // default center
+                            let posY = margin; // default bottom
+
+                            const pos = numberingPosition.value;
+                            if (pos === 'bottom-right') posX = width - textWidth - margin;
+                            else if (pos === 'bottom-left') posX = margin;
+                            else if (pos === 'top-center') posY = height - margin - textHeight;
+
+                            copiedPage.drawText(labelText, {
+                                x: posX,
+                                y: posY,
+                                size: fontSize,
+                                font: font,
+                                color: PDFLib.rgb(0.2, 0.2, 0.2)
+                            });
+                        }
+
+                        mergedPdf.addPage(copiedPage);
+                    }
+
+                    // Save merged bytes
+                    const mergedBytes = await mergedPdf.save();
+
+                    // Trigger File Download
+                    const blob = new Blob([mergedBytes], { type: 'application/pdf' });
+                    const link = document.createElement('a');
+                    link.href = URL.createObjectURL(blob);
+                    
+                    const fileName = loadedFiles.length === 1 
+                        ? `${loadedFiles[0].name.replace('.pdf', '')}_bearbeitet.pdf` 
+                        : 'zusammengefuegt.pdf';
+
+                    link.download = fileName;
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+
+                } catch (err) {
+                    console.error('Export error:', err);
+                    await showAppAlert('Exportfehler', 'Fehler beim Exportieren der PDF-Datei.', 'fa-circle-xmark', 'text-rose-400 bg-rose-500/10 border-rose-500/20');
+                } finally {
+                    hideLoading();
+                }
+            }, 100);
+        });
+
+        // Reset All
+        btnResetAll.addEventListener('click', async () => {
+            const confirmed = await showAppConfirm('Alles zurücksetzen', 'Möchten Sie wirklich alle geladenen Dateien und vorgenommenen Änderungen verwerfen?', {
+                okText: 'Zurücksetzen',
+                cancelText: 'Abbrechen',
+                iconClass: 'fa-rotate-left',
+                iconColorClass: 'text-amber-400 bg-amber-500/10 border-amber-500/20'
+            });
+
+            if (confirmed) {
+                resetAllSilently();
+            }
+        });
+
+        function resetAllSilently() {
+            loadedFiles = [];
+            pageItems = [];
+            if (sortableInstance) sortableInstance.destroy();
+            editorContainer.classList.add('hidden');
+            globalActions.classList.add('hidden');
+            uploadContainer.classList.remove('hidden');
+            fileInput.value = '';
+            appendFileInput.value = '';
+            pagesGrid.innerHTML = '';
+            fileChipsContainer.innerHTML = '';
+        }
+
+        // Loading Overlays Helpers
+        function showLoading(title, subtitle) {
+            loadingTitle.textContent = title;
+            loadingSubtitle.textContent = subtitle;
+            loadingOverlay.classList.remove('hidden');
+        }
+
+        function hideLoading() {
+            loadingOverlay.classList.add('hidden');
+        }
+    </script>
+</body>
+</html>
